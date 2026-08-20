@@ -1,10 +1,10 @@
 package internal
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
+	json "github.com/goccy/go-json"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -44,36 +44,33 @@ func TestLocalActivityParams_FailureConverterDoesNotPanic(t *testing.T) {
 	})
 }
 
-func roundTripCommand(t *testing.T, cmd any) any {
-	t.Helper()
-
-	name, err := CommandName(cmd)
+func TestCancelWorkflow_CauseOnTheWire(t *testing.T) {
+	options, err := json.Marshal(CancelWorkflow{RunID: "run-1", Cause: "because"})
 	require.NoError(t, err)
-
-	options, err := json.Marshal(cmd)
-	require.NoError(t, err)
-
-	decoded, err := InitCommand(name)
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal(options, &decoded))
-
-	return decoded
-}
-
-func TestCancelWorkflow_CauseSurvivesRoundTrip(t *testing.T) {
-	decoded := roundTripCommand(t, CancelWorkflow{RunID: "run-1", Cause: "because"})
-	require.Equal(t, &CancelWorkflow{RunID: "run-1", Cause: "because"}, decoded)
+	require.JSONEq(t, `{"runId":"run-1","cause":"because"}`, string(options))
 }
 
 func TestCancelWorkflow_EmptyCauseIsOmitted(t *testing.T) {
 	options, err := json.Marshal(CancelWorkflow{RunID: "run-1"})
 	require.NoError(t, err)
-	require.NotContains(t, string(options), "cause")
+	require.JSONEq(t, `{"runId":"run-1"}`, string(options))
 }
 
-func TestCancelExternalWorkflow_ReasonSurvivesRoundTrip(t *testing.T) {
-	cmd := CancelExternalWorkflow{Namespace: "ns", WorkflowID: "wf-1", RunID: "run-1", Reason: "because"}
-	require.Equal(t, &cmd, roundTripCommand(t, cmd))
+func TestCancelExternalWorkflow_ReasonOnTheWire(t *testing.T) {
+	options, err := json.Marshal(CancelExternalWorkflow{
+		Namespace:  "ns",
+		WorkflowID: "wf-1",
+		RunID:      "run-1",
+		Reason:     "because",
+	})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"namespace":"ns","workflowID":"wf-1","runID":"run-1","reason":"because"}`, string(options))
+}
+
+func TestCancelExternalWorkflow_EmptyReasonIsOmitted(t *testing.T) {
+	options, err := json.Marshal(CancelExternalWorkflow{Namespace: "ns", WorkflowID: "wf-1", RunID: "run-1"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"namespace":"ns","workflowID":"wf-1","runID":"run-1"}`, string(options))
 }
 
 func TestCancelExternalWorkflow_ReasonDecodedFromWorkerPayload(t *testing.T) {
@@ -81,10 +78,4 @@ func TestCancelExternalWorkflow_ReasonDecodedFromWorkerPayload(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal([]byte(`{"namespace":"ns","workflowID":"wf-1","runID":"run-1","reason":"because"}`), &decoded))
 	require.Equal(t, "because", decoded.(*CancelExternalWorkflow).Reason)
-}
-
-func TestCancelExternalWorkflow_EmptyReasonIsOmitted(t *testing.T) {
-	options, err := json.Marshal(CancelExternalWorkflow{Namespace: "ns", WorkflowID: "wf-1"})
-	require.NoError(t, err)
-	require.NotContains(t, string(options), "reason")
 }
