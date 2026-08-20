@@ -201,6 +201,7 @@ type InvokeUpdate struct {
 type CancelWorkflow struct {
 	// RunID workflow run id.
 	RunID string `json:"runId"`
+	Cause string `json:"cause,omitempty"`
 }
 
 // DestroyWorkflow asks a worker to offload workflow from memory.
@@ -339,6 +340,7 @@ type CancelExternalWorkflow struct {
 	Namespace  string `json:"namespace"`
 	WorkflowID string `json:"workflowID"`
 	RunID      string `json:"runID"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // UndefinedResponse indicates that we should panic the workflow

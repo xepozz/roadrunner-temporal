@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -41,4 +42,49 @@ func TestLocalActivityParams_FailureConverterDoesNotPanic(t *testing.T) {
 	require.NotPanics(t, func() {
 		_ = params.FailureConverter.ErrorToFailure(errors.New("boom"))
 	})
+}
+
+func roundTripCommand(t *testing.T, cmd any) any {
+	t.Helper()
+
+	name, err := CommandName(cmd)
+	require.NoError(t, err)
+
+	options, err := json.Marshal(cmd)
+	require.NoError(t, err)
+
+	decoded, err := InitCommand(name)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(options, &decoded))
+
+	return decoded
+}
+
+func TestCancelWorkflow_CauseSurvivesRoundTrip(t *testing.T) {
+	decoded := roundTripCommand(t, CancelWorkflow{RunID: "run-1", Cause: "because"})
+	require.Equal(t, &CancelWorkflow{RunID: "run-1", Cause: "because"}, decoded)
+}
+
+func TestCancelWorkflow_EmptyCauseIsOmitted(t *testing.T) {
+	options, err := json.Marshal(CancelWorkflow{RunID: "run-1"})
+	require.NoError(t, err)
+	require.NotContains(t, string(options), "cause")
+}
+
+func TestCancelExternalWorkflow_ReasonSurvivesRoundTrip(t *testing.T) {
+	cmd := CancelExternalWorkflow{Namespace: "ns", WorkflowID: "wf-1", RunID: "run-1", Reason: "because"}
+	require.Equal(t, &cmd, roundTripCommand(t, cmd))
+}
+
+func TestCancelExternalWorkflow_ReasonDecodedFromWorkerPayload(t *testing.T) {
+	decoded, err := InitCommand("CancelExternalWorkflow")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(`{"namespace":"ns","workflowID":"wf-1","runID":"run-1","reason":"because"}`), &decoded))
+	require.Equal(t, "because", decoded.(*CancelExternalWorkflow).Reason)
+}
+
+func TestCancelExternalWorkflow_EmptyReasonIsOmitted(t *testing.T) {
+	options, err := json.Marshal(CancelExternalWorkflow{Namespace: "ns", WorkflowID: "wf-1"})
+	require.NoError(t, err)
+	require.NotContains(t, string(options), "reason")
 }

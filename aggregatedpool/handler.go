@@ -91,7 +91,10 @@ func (wp *Workflow) handleUpdate(name string, id string, input *commonpb.Payload
 // schedule cancel command
 func (wp *Workflow) handleCancel() {
 	wp.mq.PushCommand(
-		internal.CancelWorkflow{RunID: wp.env.WorkflowInfo().WorkflowExecution.RunID},
+		internal.CancelWorkflow{
+			RunID: wp.env.WorkflowInfo().WorkflowExecution.RunID,
+			Cause: wp.env.GetCancelRequestedCause(),
+		},
 		nil,
 		wp.header,
 		wp.getWorkflowWorkerPid(),
@@ -496,7 +499,7 @@ func (wp *Workflow) handleMessage(msg *internal.Message) error {
 
 	case *internal.CancelExternalWorkflow:
 		wp.log.Debug("cancel external workflow request", "ID", msg.ID)
-		wp.env.RequestCancelExternalWorkflow(command.Namespace, command.WorkflowID, command.RunID, wp.createCallback(msg.ID, "CancelExternalWorkflow"))
+		wp.env.RequestCancelExternalWorkflow(command.Namespace, command.WorkflowID, command.RunID, command.Reason, wp.createCallback(msg.ID, "CancelExternalWorkflow"))
 
 	case *internal.Cancel:
 		wp.log.Debug("cancel request", "ID", msg.ID)
