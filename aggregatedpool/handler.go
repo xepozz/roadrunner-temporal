@@ -180,7 +180,7 @@ func (wp *Workflow) handleMessage(msg *internal.Message) error {
 		})
 
 		wp.canceller.Register(msg.ID, func() error {
-			wp.env.RequestCancelChildWorkflow(params.Namespace, params.WorkflowID, wp.env.GetCancellationReason())
+			wp.env.RequestCancelChildWorkflow(params.Namespace, params.WorkflowID, "")
 			return nil
 		})
 

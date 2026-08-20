@@ -21,10 +21,14 @@ type cancelStubEnv struct {
 
 	cause string
 
-	gotNamespace  string
-	gotWorkflowID string
-	gotRunID      string
-	gotReason     string
+	childNamespace  string
+	childWorkflowID string
+	childReason     string
+
+	externalNamespace  string
+	externalWorkflowID string
+	externalRunID      string
+	externalReason     string
 }
 
 func (e *cancelStubEnv) WorkflowInfo() *workflow.Info {
@@ -38,16 +42,16 @@ func (e *cancelStubEnv) ExecuteChildWorkflow(_ bindings.ExecuteWorkflowParams, _
 }
 
 func (e *cancelStubEnv) RequestCancelChildWorkflow(namespace, workflowID, reason string) {
-	e.gotNamespace = namespace
-	e.gotWorkflowID = workflowID
-	e.gotReason = reason
+	e.childNamespace = namespace
+	e.childWorkflowID = workflowID
+	e.childReason = reason
 }
 
 func (e *cancelStubEnv) RequestCancelExternalWorkflow(namespace, workflowID, runID, reason string, _ bindings.ResultHandler) {
-	e.gotNamespace = namespace
-	e.gotWorkflowID = workflowID
-	e.gotRunID = runID
-	e.gotReason = reason
+	e.externalNamespace = namespace
+	e.externalWorkflowID = workflowID
+	e.externalRunID = runID
+	e.externalReason = reason
 }
 
 type emptyPool struct {
@@ -68,15 +72,23 @@ func newCancelTestWorkflow(env bindings.WorkflowEnvironment) *Workflow {
 }
 
 func TestHandleCancel_PushesCauseFromEnvironment(t *testing.T) {
-	for _, cause := range []string{"user asked nicely", ""} {
-		env := &cancelStubEnv{cause: cause}
-		wp := newCancelTestWorkflow(env)
+	for _, tc := range []struct {
+		name  string
+		cause string
+	}{
+		{name: "with cause", cause: "user asked nicely"},
+		{name: "without cause", cause: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := &cancelStubEnv{cause: tc.cause}
+			wp := newCancelTestWorkflow(env)
 
-		wp.handleCancel()
+			wp.handleCancel()
 
-		messages := wp.mq.Messages()
-		require.Len(t, messages, 1)
-		require.Equal(t, internal.CancelWorkflow{RunID: "run-1", Cause: cause}, messages[0].Command)
+			messages := wp.mq.Messages()
+			require.Len(t, messages, 1)
+			require.Equal(t, internal.CancelWorkflow{RunID: "run-1", Cause: tc.cause}, messages[0].Command)
+		})
 	}
 }
 
@@ -94,13 +106,13 @@ func TestHandleMessage_ForwardsCancelExternalWorkflowReason(t *testing.T) {
 		},
 	}))
 
-	require.Equal(t, "ns", env.gotNamespace)
-	require.Equal(t, "wf-1", env.gotWorkflowID)
-	require.Equal(t, "run-2", env.gotRunID)
-	require.Equal(t, "because", env.gotReason)
+	require.Equal(t, "ns", env.externalNamespace)
+	require.Equal(t, "wf-1", env.externalWorkflowID)
+	require.Equal(t, "run-2", env.externalRunID)
+	require.Equal(t, "because", env.externalReason)
 }
 
-func TestHandleMessage_CascadesCancellationReasonToChildWorkflow(t *testing.T) {
+func TestHandleMessage_ChildWorkflowCancelCarriesNoInventedReason(t *testing.T) {
 	env := &cancelStubEnv{cause: "because"}
 	wp := newCancelTestWorkflow(env)
 
@@ -113,6 +125,7 @@ func TestHandleMessage_CascadesCancellationReasonToChildWorkflow(t *testing.T) {
 	}))
 	require.NoError(t, wp.canceller.Cancel(1))
 
-	require.Equal(t, "child-1", env.gotWorkflowID)
-	require.Equal(t, "because", env.gotReason)
+	require.Equal(t, "ns", env.childNamespace)
+	require.Equal(t, "child-1", env.childWorkflowID)
+	require.Empty(t, env.childReason, "the plugin cannot know why the worker canceled this child, so it must not reuse the workflow's own reason")
 }
