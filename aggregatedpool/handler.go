@@ -93,7 +93,7 @@ func (wp *Workflow) handleCancel() {
 	wp.mq.PushCommand(
 		internal.CancelWorkflow{
 			RunID: wp.env.WorkflowInfo().WorkflowExecution.RunID,
-			Cause: wp.env.GetCancelRequestedCause(),
+			Cause: wp.env.GetCancellationReason(),
 		},
 		nil,
 		wp.header,
@@ -180,7 +180,7 @@ func (wp *Workflow) handleMessage(msg *internal.Message) error {
 		})
 
 		wp.canceller.Register(msg.ID, func() error {
-			wp.env.RequestCancelChildWorkflow(params.Namespace, params.WorkflowID)
+			wp.env.RequestCancelChildWorkflow(params.Namespace, params.WorkflowID, wp.env.GetCancellationReason())
 			return nil
 		})
 

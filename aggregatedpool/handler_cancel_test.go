@@ -11,6 +11,7 @@ import (
 	"github.com/temporalio/roadrunner-temporal/v6/canceller"
 	"github.com/temporalio/roadrunner-temporal/v6/internal"
 	"github.com/temporalio/roadrunner-temporal/v6/queue"
+	"github.com/temporalio/roadrunner-temporal/v6/registry"
 	bindings "go.temporal.io/sdk/internalbindings"
 	"go.temporal.io/sdk/workflow"
 )
@@ -30,7 +31,17 @@ func (e *cancelStubEnv) WorkflowInfo() *workflow.Info {
 	return &workflow.Info{WorkflowExecution: workflow.Execution{RunID: "run-1"}}
 }
 
-func (e *cancelStubEnv) GetCancelRequestedCause() string { return e.cause }
+func (e *cancelStubEnv) GetCancellationReason() string { return e.cause }
+
+func (e *cancelStubEnv) ExecuteChildWorkflow(_ bindings.ExecuteWorkflowParams, _ bindings.ResultHandler, startedHandler func(bindings.WorkflowExecution, error)) {
+	startedHandler(bindings.WorkflowExecution{}, nil)
+}
+
+func (e *cancelStubEnv) RequestCancelChildWorkflow(namespace, workflowID, reason string) {
+	e.gotNamespace = namespace
+	e.gotWorkflowID = workflowID
+	e.gotReason = reason
+}
 
 func (e *cancelStubEnv) RequestCancelExternalWorkflow(namespace, workflowID, runID, reason string, _ bindings.ResultHandler) {
 	e.gotNamespace = namespace
@@ -50,6 +61,7 @@ func newCancelTestWorkflow(env bindings.WorkflowEnvironment) *Workflow {
 		env:       env,
 		pool:      emptyPool{},
 		mq:        queue.NewMessageQueue(seq),
+		ids:       new(registry.IDRegistry),
 		canceller: new(canceller.Canceller),
 		log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
@@ -85,5 +97,22 @@ func TestHandleMessage_ForwardsCancelExternalWorkflowReason(t *testing.T) {
 	require.Equal(t, "ns", env.gotNamespace)
 	require.Equal(t, "wf-1", env.gotWorkflowID)
 	require.Equal(t, "run-2", env.gotRunID)
+	require.Equal(t, "because", env.gotReason)
+}
+
+func TestHandleMessage_CascadesCancellationReasonToChildWorkflow(t *testing.T) {
+	env := &cancelStubEnv{cause: "because"}
+	wp := newCancelTestWorkflow(env)
+
+	require.NoError(t, wp.handleMessage(&internal.Message{
+		ID: 1,
+		Command: &internal.ExecuteChildWorkflow{
+			Name:    "child",
+			Options: bindings.WorkflowOptions{WorkflowID: "child-1", Namespace: "ns"},
+		},
+	}))
+	require.NoError(t, wp.canceller.Cancel(1))
+
+	require.Equal(t, "child-1", env.gotWorkflowID)
 	require.Equal(t, "because", env.gotReason)
 }
