@@ -30,8 +30,9 @@ import (
 
 const (
 	// pluginName defines the service name used for configuration lookup and plugin registration.
-	pluginName string = "temporal"
-	metricsKey string = "temporal.metrics"
+	pluginName    string = "temporal"
+	metricsKey    string = "temporal.metrics"
+	rpcPluginName string = "rpc"
 
 	// RrMode env variable key
 	RrMode string = "RR_MODE"
@@ -95,6 +96,10 @@ func (p *Plugin) Init(cfg api.Configurer, log Logger, server api.Server) error {
 
 	if !cfg.Has(pluginName) {
 		return errors.E(op, errors.Disabled)
+	}
+
+	if !cfg.Has(rpcPluginName) {
+		return errors.E(op, errors.Errorf("%s serves activity heartbeats and workflow replay over the %s plugin, add an %s section to the configuration", pluginName, rpcPluginName, rpcPluginName))
 	}
 
 	err := cfg.UnmarshalKey(pluginName, &p.config)
